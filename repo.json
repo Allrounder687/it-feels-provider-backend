@@ -1,0 +1,11 @@
+{
+  "name": "IT Feels Community Repository",
+  "extensions": [
+    {
+      "id": "it-feels-dart-provider",
+      "name": "Local Dart Extension Backend",
+      "baseUrl": "http://10.0.2.2:8080",
+      "version": "1.0.0"
+    }
+  ]
+}
