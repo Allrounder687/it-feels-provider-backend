@@ -141,6 +141,39 @@ export default {
         let cleanId = videoId.includes(':') ? videoId.split(':').pop() : videoId;
         let searchQuery = query ? query : videoId.replace('search:', '');
 
+        // 1. FAST PATH: Jiosaavn Direct Resolution
+        // Bypass dead YouTube instances entirely for standard music tracks
+        if (cleanId && !videoId.startsWith('search:')) {
+          try {
+            const detailsRes = await fetch(`https://www.jiosaavn.com/api.php?__call=song.getDetails&pids=${cleanId}&api_version=4&_format=json&_marker=0`);
+            const detailsData = await detailsRes.json();
+            
+            if (detailsData && detailsData[cleanId] && detailsData[cleanId].more_info && detailsData[cleanId].more_info.encrypted_media_url) {
+              const encUrl = detailsData[cleanId].more_info.encrypted_media_url;
+              const authRes = await fetch(`https://www.jiosaavn.com/api.php?__call=song.generateAuthToken&url=${encodeURIComponent(encUrl)}&bitrate=320&api_version=4&_format=json&ctx=web6dot0&_marker=0`);
+              const authData = await authRes.json();
+              if (authData && authData.auth_url) {
+                return new Response(JSON.stringify({
+                  success: true,
+                  title: detailsData[cleanId].title || 'Audio',
+                  streams: [{
+                    quality: 'audio',
+                    url: authData.auth_url,
+                    mimeType: 'audio/mp4',
+                    videoOnly: false,
+                    codec: 'mp4a'
+                  }],
+                  audioUrl: authData.auth_url,
+                }), {
+                  headers: { 'Content-Type': 'application/json', ...corsHeaders },
+                });
+              }
+            }
+          } catch (e) {
+             // Ignore and fallback to Piped
+          }
+        }
+
         const pipedInstances = [
           'https://pipedapi.moomoo.me',
           'https://pipedapi.syncpundit.io',
