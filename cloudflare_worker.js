@@ -54,21 +54,119 @@ export default {
         });
       }
 
-      // 1.b Search Playlists Endpoint (Deezer)
+      // 1.b Search Playlists Endpoint (Saavn)
       if (path === '/api/v1/search/playlists') {
         const query = url.searchParams.get('query') || '';
         if (!query) return new Response(JSON.stringify({ success: false, results: [] }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        const dzUrl = `https://api.deezer.com/search/playlist?q=${encodeURIComponent(query)}&limit=10`;
+        
+        const saavnUrl = `https://www.jiosaavn.com/api.php?__call=search.getPlaylistResults&q=${encodeURIComponent(query)}&p=1&n=20&api_version=4&_format=json&_marker=0`;
+        const res = await fetch(saavnUrl);
+        const data = await res.json();
+        const results = (data.results || []).map(e => ({
+          id: e.id, // Saavn playlist token/id
+          title: decodeHtml(e.title || ''),
+          subtitle: decodeHtml(e.subtitle || ''),
+          type: 'playlist',
+          image: (e.image || '').replace('50x50', '500x500').replace('150x150', '500x500'),
+        }));
+        return new Response(JSON.stringify({ success: true, results }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+      }
+
+
+
+      // 1.d Charts Endpoint
+      if (path === '/api/v1/charts') {
+        const dzUrl = 'https://api.deezer.com/chart';
         const res = await fetch(dzUrl);
         const data = await res.json();
-        const results = (data.data || []).map(e => ({
+        const tracks = (data.tracks && data.tracks.data ? data.tracks.data : []).map(e => ({
+          id: e.id.toString(),
+          title: e.title,
+          artist: e.artist ? e.artist.name : 'Unknown Artist',
+          album: e.album ? e.album.title : '',
+          duration: e.duration || 0,
+          coverArt: e.album ? e.album.cover_xl : '',
+        }));
+        const playlists = (data.playlists && data.playlists.data ? data.playlists.data : []).map(e => ({
           id: e.id.toString(),
           title: e.title,
           subtitle: e.user ? e.user.name : '',
           type: 'playlist',
-          image: e.picture_xl || e.picture_medium || '',
+          image: e.picture_xl || '',
         }));
-        return new Response(JSON.stringify({ success: true, results }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        return new Response(JSON.stringify({ success: true, data: { tracks, playlists } }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+      }
+
+      // 1.e Playlist Tracks Endpoint (Deezer or Saavn depending on ID format)
+      if (path === '/api/v1/playlist') {
+        const id = url.searchParams.get('id') || '';
+        const type = url.searchParams.get('type') || 'playlist';
+        if (!id) return new Response(JSON.stringify({ success: false, tracks: [] }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        
+        // If ID is all digits and it's not explicitly an album, it's likely a Deezer playlist
+        if (/^\d+$/.test(id) && type !== 'album') {
+            const dzUrl = `https://api.deezer.com/playlist/${id}/tracks`;
+            const res = await fetch(dzUrl);
+            const data = await res.json();
+            const tracks = (data.data || []).map(e => ({
+              id: e.id.toString(),
+              title: e.title,
+              artist: e.artist ? e.artist.name : 'Unknown Artist',
+              album: e.album ? e.album.title : '',
+              duration: e.duration || 0,
+              coverArt: e.album ? (e.album.cover_xl || e.album.cover_medium) : '',
+            }));
+            return new Response(JSON.stringify({ success: true, tracks }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        } else {
+            // Else assume Saavn
+            let saavnUrl = '';
+            if (type === 'album') {
+                saavnUrl = `https://www.jiosaavn.com/api.php?__call=content.getAlbumDetails&_format=json&cc=in&_marker=0&api_version=4&ctx=web6dot0&albumid=${id}`;
+            } else {
+                saavnUrl = `https://www.jiosaavn.com/api.php?__call=playlist.getDetails&_format=json&cc=in&_marker=0&api_version=4&ctx=web6dot0&listid=${id}`;
+            }
+            const res = await fetch(saavnUrl);
+            const data = await res.json();
+            const rawList = data.songs || data.list || [];
+            const tracks = rawList.map(e => ({
+                id: e.id,
+                title: decodeHtml(e.title || e.name || ''),
+                artist: decodeHtml(e.subtitle || e.primary_artists || ''),
+                album: decodeHtml((e.more_info && e.more_info.album) || ''),
+                duration: parseInt((e.more_info && e.more_info.duration) || '0') || 0,
+                coverArt: (e.image || '').replace('150x150', '500x500'),
+            }));
+            return new Response(JSON.stringify({ success: true, tracks }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        }
+      }
+
+      // 1.f Lyrics Endpoint (Saavn)
+      if (path === '/api/v1/lyrics') {
+        const track = url.searchParams.get('track') || '';
+        const artist = url.searchParams.get('artist') || '';
+        if (!track) return new Response(JSON.stringify({ success: false }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        
+        // Simple search Saavn for lyrics
+        const searchUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&q=${encodeURIComponent(track + ' ' + artist)}&p=1&n=5&api_version=4&_format=json&_marker=0`;
+        const res = await fetch(searchUrl);
+        const data = await res.json();
+        const results = data.results || [];
+        if (results.length > 0) {
+           const songId = results[0].id;
+           const lyricsUrl = `https://www.jiosaavn.com/api.php?__call=lyrics.getLyrics&lyrics_id=${songId}&ctx=web6dot0&api_version=4&_format=json&_marker=0`;
+           const lyricsRes = await fetch(lyricsUrl);
+           const lyricsData = await lyricsRes.json();
+           if (lyricsData.lyrics) {
+              return new Response(JSON.stringify({
+                 success: true,
+                 lyrics: {
+                    plain: lyricsData.lyrics.replace(/<br>/g, '\n'),
+                    synced: null
+                 }
+              }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+           }
+        }
+        return new Response(JSON.stringify({ success: false }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
       }
 
       // 1.c Search Podcasts Endpoint (YouTube HTML Scraper)
@@ -127,24 +225,38 @@ export default {
         let playlists = [];
 
         if (data.new_trending) {
-          trending = data.new_trending.map(e => ({
-            id: e.id,
-            title: decodeHtml(e.title || ''),
-            artist: decodeHtml(e.subtitle || ''),
-            album: decodeHtml((e.more_info && e.more_info.album) || ''),
-            duration: parseInt((e.more_info && e.more_info.duration) || '0') || 0,
-            coverArt: (e.image || '').replace('150x150', '500x500'),
-          }));
+          for (const e of data.new_trending) {
+            if (e.type === 'song') {
+              trending.push({
+                id: e.id,
+                title: decodeHtml(e.title || ''),
+                artist: decodeHtml(e.subtitle || ''),
+                album: decodeHtml((e.more_info && e.more_info.album) || ''),
+                duration: parseInt((e.more_info && e.more_info.duration) || '0') || 0,
+                coverArt: (e.image || '').replace('150x150', '500x500'),
+              });
+            } else {
+              playlists.push({
+                id: e.id,
+                title: decodeHtml(e.title || ''),
+                subtitle: decodeHtml(e.subtitle || ''),
+                type: e.type || 'playlist',
+                image: (e.image || '').replace('150x150', '500x500'),
+              });
+            }
+          }
         }
 
         if (data.top_playlists) {
-          playlists = data.top_playlists.map(e => ({
-            id: e.id,
-            title: decodeHtml(e.title || ''),
-            subtitle: decodeHtml(e.subtitle || ''),
-            type: e.type || 'playlist',
-            image: (e.image || '').replace('150x150', '500x500'),
-          }));
+          for (const e of data.top_playlists) {
+            playlists.push({
+              id: e.id,
+              title: decodeHtml(e.title || ''),
+              subtitle: decodeHtml(e.subtitle || ''),
+              type: e.type || 'playlist',
+              image: (e.image || '').replace('150x150', '500x500'),
+            });
+          }
         }
 
         return new Response(JSON.stringify({
