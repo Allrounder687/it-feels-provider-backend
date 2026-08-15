@@ -71,22 +71,50 @@ export default {
         return new Response(JSON.stringify({ success: true, results }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
       }
 
-      // 1.c Search Podcasts Endpoint (Deezer)
+      // 1.c Search Podcasts Endpoint (YouTube HTML Scraper)
       if (path === '/api/v1/search/podcasts') {
         const query = url.searchParams.get('query') || '';
         if (!query) return new Response(JSON.stringify({ success: false, results: [] }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        const dzUrl = `https://api.deezer.com/search/podcast?q=${encodeURIComponent(query)}&limit=10`;
-        const res = await fetch(dzUrl);
-        const data = await res.json();
-        const results = (data.data || []).map(e => ({
-          id: e.id.toString(),
-          title: e.title,
-          artist: e.description || 'Podcast',
-          album: 'Podcast',
-          duration: 0,
-          coverArt: e.picture_xl || e.picture_medium || '',
-        }));
-        return new Response(JSON.stringify({ success: true, results }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        
+        try {
+          const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' podcast')}`;
+          const res = await fetch(ytUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9'
+            }
+          });
+          const html = await res.text();
+          const match = html.match(/ytInitialData\s*=\s*({.+?});/);
+          let results = [];
+          
+          if (match && match[1]) {
+            const data = JSON.parse(match[1]);
+            const contents = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+            
+            for (let section of contents) {
+              if (section.itemSectionRenderer) {
+                for (let item of section.itemSectionRenderer.contents) {
+                  if (item.videoRenderer) {
+                    const video = item.videoRenderer;
+                    results.push({
+                      id: 'yt:' + video.videoId,
+                      title: video.title?.runs?.[0]?.text || 'Podcast',
+                      artist: video.ownerText?.runs?.[0]?.text || 'YouTube',
+                      album: 'Podcast',
+                      duration: video.lengthText ? (parseInt(video.lengthText.simpleText.split(':')[0] || '0') * 60 + parseInt(video.lengthText.simpleText.split(':')[1] || '0')) : 0,
+                      coverArt: video.thumbnail?.thumbnails?.pop()?.url || '',
+                    });
+                  }
+                }
+              }
+            }
+          }
+          
+          return new Response(JSON.stringify({ success: true, results: results.slice(0, 15) }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        } catch (e) {
+          return new Response(JSON.stringify({ success: false, error: e.toString() }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        }
       }
 
       // 2. Home Feed Endpoint
@@ -270,7 +298,76 @@ export default {
           } catch (e) {}
         }
 
-        // Exhausted piped instances
+        // Exhausted piped instances, fallback to direct YouTube HTML scraping
+        try {
+          const ytUrl = `https://www.youtube.com/watch?v=${cleanId}`;
+          const ytRes = await fetch(ytUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9'
+            }
+          });
+          const html = await ytRes.text();
+          const match = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+          
+          if (match && match[1]) {
+            const ytData = JSON.parse(match[1]);
+            if (ytData.streamingData && ytData.streamingData.adaptiveFormats) {
+              const formats = ytData.streamingData.adaptiveFormats;
+              let streams = [];
+              
+              // Process video and audio formats
+              for (const f of formats) {
+                if (!f.mimeType) continue;
+                
+                let fUrl = f.url || '';
+                if (!fUrl && f.signatureCipher) {
+                  const cipherParams = new URLSearchParams(f.signatureCipher);
+                  fUrl = cipherParams.get('url') || '';
+                }
+                
+                if (fUrl) {
+                  if (f.mimeType.includes('video/')) {
+                    const isH264 = f.mimeType.includes('avc1') || f.mimeType.includes('mp4');
+                    if (isH264) {
+                      streams.push({
+                        quality: f.qualityLabel || '720p',
+                        url: fUrl,
+                        mimeType: 'video/mp4',
+                        videoOnly: true,
+                        codec: 'avc1'
+                      });
+                    }
+                  } else if (f.mimeType.includes('audio/')) {
+                    streams.push({
+                      quality: 'audio',
+                      url: fUrl,
+                      mimeType: f.mimeType,
+                      videoOnly: false,
+                      codec: f.mimeType.includes('mp4a') ? 'mp4a' : 'opus',
+                      bitrate: f.bitrate || 0
+                    });
+                  }
+                }
+              }
+              
+              const audioStreams = streams.filter(s => s.quality === 'audio');
+              if (audioStreams.length > 0) {
+                audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+                
+                return new Response(JSON.stringify({
+                  success: true,
+                  title: ytData.videoDetails ? ytData.videoDetails.title : 'Video',
+                  streams: streams,
+                  audioUrl: audioStreams[0].url
+                }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+              }
+            }
+          }
+        } catch (e) {
+           // Fallthrough
+        }
+
         return new Response(JSON.stringify({ success: true, streams: [] }), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         });
