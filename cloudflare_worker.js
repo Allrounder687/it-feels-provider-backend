@@ -208,6 +208,69 @@ export default {
         });
       }
 
+      // 4. Deezer Proxy Endpoint
+      if (path.startsWith('/api/v1/deezer/')) {
+        const deezerPath = path.replace('/api/v1/deezer/', '');
+        const query = url.search;
+        const deezerUrl = `https://api.deezer.com/${deezerPath}${query}`;
+        try {
+          const res = await fetch(deezerUrl);
+          const data = await res.text();
+          return new Response(data, {
+            status: res.status,
+            headers: {
+              'Content-Type': 'application/json',
+              ...corsHeaders
+            }
+          });
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
+      // 5. Spotify Token Endpoint
+      if (path === '/spotify/token') {
+        const clientId = env.SPOTIFY_CLIENT_ID || '';
+        const clientSecret = env.SPOTIFY_CLIENT_SECRET || '';
+
+        if (!clientId || !clientSecret) {
+          return new Response(JSON.stringify({ error: 'Missing Spotify credentials in backend environment' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          });
+        }
+
+        const authBase64 = btoa(`${clientId}:${clientSecret}`);
+
+        try {
+          const spotifyRes = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${authBase64}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'grant_type=client_credentials'
+          });
+
+          const data = await spotifyRes.text();
+          return new Response(data, {
+            status: spotifyRes.status,
+            headers: {
+              'Content-Type': 'application/json',
+              ...corsHeaders
+            }
+          });
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
       return new Response(JSON.stringify({ success: false, error: 'Not Found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },

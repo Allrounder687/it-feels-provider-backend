@@ -1,0 +1,8 @@
+name = "it-feels-backend"
+main = "cloudflare_worker.js"
+compatibility_date = "2024-03-20"
+
+[vars]
+# Add your Spotify credentials here
+SPOTIFY_CLIENT_ID = ""
+SPOTIFY_CLIENT_SECRET = ""
