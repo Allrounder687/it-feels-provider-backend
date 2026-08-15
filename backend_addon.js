@@ -6,7 +6,10 @@ function getSearchUrl(query) {
 }
 
 // Return the direct stream API endpoint
-function getStreamUrl(id) {
+function getStreamUrl(id, query) {
+    if (query) {
+        return BACKEND_URL + "/api/v1/video/stream?id=" + encodeURIComponent(id) + "&query=" + encodeURIComponent(query);
+    }
     return BACKEND_URL + "/api/v1/video/stream?id=" + encodeURIComponent("search:" + id);
 }
 
