@@ -150,7 +150,7 @@ export default {
             
             if (detailsData && detailsData[cleanId] && detailsData[cleanId].more_info && detailsData[cleanId].more_info.encrypted_media_url) {
               const encUrl = detailsData[cleanId].more_info.encrypted_media_url;
-              const authRes = await fetch(`https://www.jiosaavn.com/api.php?__call=song.generateAuthToken&url=${encodeURIComponent(encUrl)}&bitrate=320&api_version=4&_format=json&ctx=web6dot0&_marker=0`);
+              const authRes = await fetch(`https://www.jiosaavn.com/api.php?__call=song.generateAuthToken&url=${encodeURIComponent(encUrl)}&bitrate=128&api_version=4&_format=json&ctx=web6dot0&_marker=0`);
               const authData = await authRes.json();
               if (authData && authData.auth_url) {
                 return new Response(JSON.stringify({
