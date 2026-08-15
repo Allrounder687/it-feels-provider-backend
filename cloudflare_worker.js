@@ -537,6 +537,93 @@ export default {
         });
       }
 
+      // 9. Video and Podcast Search Endpoint (Piped API)
+      if (path === '/api/v1/search/videos' || path === '/api/v1/search/podcasts') {
+        const query = url.searchParams.get('query') || '';
+        
+        const pipedInstances = [
+          'https://pipedapi.moomoo.me',
+          'https://pipedapi.syncpundit.io',
+          'https://piapi.ggtyler.dev',
+          'https://api.piped.private.coffee',
+        ];
+
+        let results = [];
+        for (const instance of pipedInstances) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
+            
+            const searchRes = await fetch(`${instance}/search?q=${encodeURIComponent(query)}&filter=all`, {
+               signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const items = searchData.items || [];
+              const videoItems = items.filter(i => i.type === 'stream' && i.url.includes('/watch?v='));
+              results = videoItems.map(item => ({
+                id: item.url.split('v=')[1],
+                title: item.title,
+                uploader: item.uploaderName,
+                duration: item.duration,
+                thumbnail: item.thumbnail
+              }));
+              break; // Found results successfully
+            }
+          } catch (e) {
+             // try next instance
+          }
+        }
+        
+        return new Response(JSON.stringify({ success: true, results: results }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      // 10. Trending Videos Endpoint
+      if (path === '/api/v1/trending/videos') {
+        const pipedInstances = [
+          'https://pipedapi.moomoo.me',
+          'https://pipedapi.syncpundit.io',
+          'https://piapi.ggtyler.dev',
+          'https://api.piped.private.coffee',
+        ];
+
+        let results = [];
+        for (const instance of pipedInstances) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
+            
+            const searchRes = await fetch(`${instance}/trending?region=IN`, {
+               signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (searchRes.ok) {
+              const items = await searchRes.json();
+              const videoItems = items.filter(i => i.type === 'stream' && i.url.includes('/watch?v='));
+              results = videoItems.map(item => ({
+                id: item.url.split('v=')[1],
+                title: item.title,
+                uploader: item.uploaderName,
+                duration: item.duration,
+                thumbnail: item.thumbnail
+              }));
+              break;
+            }
+          } catch (e) {
+             // try next instance
+          }
+        }
+        
+        return new Response(JSON.stringify({ success: true, results: results }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
       return new Response(JSON.stringify({ success: false, error: 'Not Found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
