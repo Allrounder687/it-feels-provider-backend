@@ -12,7 +12,9 @@ final _yt = YoutubeExplode();
 final _router = Router()
   ..get('/', _rootHandler)
   ..get('/api/v1/search', _searchHandler)
-  ..get('/api/v1/video/stream', _streamHandler);
+  ..get('/api/v1/video/stream', _streamHandler)
+  ..get('/api/v1/deezer/<path|.*>', _deezerProxyHandler)
+  ..get('/spotify/token', _spotifyTokenHandler);
 
 Response _rootHandler(Request req) {
   return Response.ok('IT Feels Provider Backend is running!\n');
@@ -209,6 +211,71 @@ String _decodeHtml(String text) {
       .replaceAll('&quot;', '"')
       .replaceAll('&#039;', "'")
       .replaceAll('&amp;', '&');
+}
+
+Future<Response> _deezerProxyHandler(Request request, String path) async {
+  try {
+    final query = request.url.query;
+    final url = Uri.parse(
+      'https://api.deezer.com/$path${query.isNotEmpty ? '?$query' : ''}',
+    );
+    final response = await http.get(url);
+
+    return Response(
+      response.statusCode,
+      body: response.body,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    );
+  } catch (e) {
+    print('Deezer proxy error: $e');
+    return Response.internalServerError(
+      body: jsonEncode({'error': e.toString()}),
+    );
+  }
+}
+
+Future<Response> _spotifyTokenHandler(Request request) async {
+  try {
+    final clientId = Platform.environment['SPOTIFY_CLIENT_ID'] ?? '';
+    final clientSecret = Platform.environment['SPOTIFY_CLIENT_SECRET'] ?? '';
+
+    if (clientId.isEmpty || clientSecret.isEmpty) {
+      return Response.internalServerError(
+        body: jsonEncode({
+          'error': 'Missing Spotify credentials in backend environment',
+        }),
+      );
+    }
+
+    final authBytes = utf8.encode('$clientId:$clientSecret');
+    final authBase64 = base64Encode(authBytes);
+
+    final response = await http.post(
+      Uri.parse('https://accounts.spotify.com/api/token'),
+      headers: {
+        'Authorization': 'Basic $authBase64',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: {'grant_type': 'client_credentials'},
+    );
+
+    return Response(
+      response.statusCode,
+      body: response.body,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    );
+  } catch (e) {
+    print('Spotify token error: $e');
+    return Response.internalServerError(
+      body: jsonEncode({'error': e.toString()}),
+    );
+  }
 }
 
 void main(List<String> args) async {
