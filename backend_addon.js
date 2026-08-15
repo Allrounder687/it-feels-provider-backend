@@ -5,6 +5,14 @@ function getSearchUrl(query) {
     return BACKEND_URL + "/api/v1/search?query=" + encodeURIComponent(query);
 }
 
+function getSearchPlaylistsUrl(query) {
+    return BACKEND_URL + "/api/v1/search/playlists?query=" + encodeURIComponent(query);
+}
+
+function getSearchPodcastsUrl(query) {
+    return BACKEND_URL + "/api/v1/search/podcasts?query=" + encodeURIComponent(query);
+}
+
 // Return the direct stream API endpoint
 function getStreamUrl(id, query) {
     if (query) {

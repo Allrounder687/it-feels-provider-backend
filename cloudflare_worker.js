@@ -54,6 +54,41 @@ export default {
         });
       }
 
+      // 1.b Search Playlists Endpoint (Deezer)
+      if (path === '/api/v1/search/playlists') {
+        const query = url.searchParams.get('query') || '';
+        if (!query) return new Response(JSON.stringify({ success: false, results: [] }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        const dzUrl = `https://api.deezer.com/search/playlist?q=${encodeURIComponent(query)}&limit=10`;
+        const res = await fetch(dzUrl);
+        const data = await res.json();
+        const results = (data.data || []).map(e => ({
+          id: e.id.toString(),
+          title: e.title,
+          subtitle: e.user ? e.user.name : '',
+          type: 'playlist',
+          image: e.picture_xl || e.picture_medium || '',
+        }));
+        return new Response(JSON.stringify({ success: true, results }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+      }
+
+      // 1.c Search Podcasts Endpoint (Deezer)
+      if (path === '/api/v1/search/podcasts') {
+        const query = url.searchParams.get('query') || '';
+        if (!query) return new Response(JSON.stringify({ success: false, results: [] }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        const dzUrl = `https://api.deezer.com/search/podcast?q=${encodeURIComponent(query)}&limit=10`;
+        const res = await fetch(dzUrl);
+        const data = await res.json();
+        const results = (data.data || []).map(e => ({
+          id: e.id.toString(),
+          title: e.title,
+          artist: e.description || 'Podcast',
+          album: 'Podcast',
+          duration: 0,
+          coverArt: e.picture_xl || e.picture_medium || '',
+        }));
+        return new Response(JSON.stringify({ success: true, results }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+      }
+
       // 2. Home Feed Endpoint
       if (path === '/api/v1/home') {
         const saavnUrl = 'https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&api_version=4&_format=json&_marker=0';
