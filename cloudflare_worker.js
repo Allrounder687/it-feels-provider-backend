@@ -271,6 +271,107 @@ export default {
         }
       }
 
+      // 6. LastFM Auth Endpoint
+      if (path === '/api/v1/lastfm/auth' && request.method === 'POST') {
+        const bodyText = await request.text();
+        const data = JSON.parse(bodyText);
+        const { username, password } = data;
+
+        const apiKey = env.LASTFM_API_KEY || '';
+        const secret = env.LASTFM_SHARED_SECRET || '';
+
+        if (!apiKey || !secret) {
+          return new Response(JSON.stringify({ error: 'Missing LastFM credentials in backend' }), {
+            status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+
+        const params = {
+          method: 'auth.getMobileSession',
+          username, password, api_key: apiKey
+        };
+
+        const apiSig = await generateLastFmSignature(params, secret);
+        const searchParams = new URLSearchParams({ ...params, api_sig: apiSig, format: 'json' });
+
+        const lastfmRes = await fetch('https://ws.audioscrobbler.com/2.0/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: searchParams.toString()
+        });
+
+        return new Response(await lastfmRes.text(), {
+          status: lastfmRes.status,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+
+      // 7. LastFM Now Playing Endpoint
+      if (path === '/api/v1/lastfm/nowplaying' && request.method === 'POST') {
+        const bodyText = await request.text();
+        const data = JSON.parse(bodyText);
+        
+        const apiKey = env.LASTFM_API_KEY || '';
+        const secret = env.LASTFM_SHARED_SECRET || '';
+
+        const params = {
+          method: 'track.updateNowPlaying',
+          track: data.track,
+          artist: data.artist,
+          api_key: apiKey,
+          sk: data.sk
+        };
+        if (data.album) params.album = data.album;
+        if (data.duration) params.duration = data.duration;
+
+        const apiSig = await generateLastFmSignature(params, secret);
+        const searchParams = new URLSearchParams({ ...params, api_sig: apiSig, format: 'json' });
+
+        const lastfmRes = await fetch('https://ws.audioscrobbler.com/2.0/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: searchParams.toString()
+        });
+
+        return new Response(await lastfmRes.text(), {
+          status: lastfmRes.status,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+
+      // 8. LastFM Scrobble Endpoint
+      if (path === '/api/v1/lastfm/scrobble' && request.method === 'POST') {
+        const bodyText = await request.text();
+        const data = JSON.parse(bodyText);
+        
+        const apiKey = env.LASTFM_API_KEY || '';
+        const secret = env.LASTFM_SHARED_SECRET || '';
+
+        const params = {
+          method: 'track.scrobble',
+          'track[0]': data.track,
+          'artist[0]': data.artist,
+          'timestamp[0]': data.timestamp.toString(),
+          api_key: apiKey,
+          sk: data.sk
+        };
+        if (data.album) params['album[0]'] = data.album;
+
+        const apiSig = await generateLastFmSignature(params, secret);
+        const searchParams = new URLSearchParams({ ...params, api_sig: apiSig, format: 'json' });
+
+        const lastfmRes = await fetch('https://ws.audioscrobbler.com/2.0/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: searchParams.toString()
+        });
+
+        return new Response(await lastfmRes.text(), {
+          status: lastfmRes.status,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+
       return new Response(JSON.stringify({ success: false, error: 'Not Found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
@@ -289,4 +390,20 @@ function decodeHtml(html) {
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
     .replace(/&amp;/g, '&');
+}
+
+async function generateLastFmSignature(params, secret) {
+  const keys = Object.keys(params).sort();
+  let sigStr = '';
+  for (const k of keys) {
+    sigStr += `${k}${params[k]}`;
+  }
+  sigStr += secret;
+
+  // Cloudflare Workers WebCrypto MD5 support
+  const msgUint8 = new TextEncoder().encode(sigStr);
+  const hashBuffer = await crypto.subtle.digest('MD5', msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;
 }
