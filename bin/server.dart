@@ -6,6 +6,7 @@ import 'package:shelf/shelf_io.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:http/http.dart' as http;
+import 'package:crypto/crypto.dart';
 
 final _yt = YoutubeExplode();
 
@@ -14,7 +15,10 @@ final _router = Router()
   ..get('/api/v1/search', _searchHandler)
   ..get('/api/v1/video/stream', _streamHandler)
   ..get('/api/v1/deezer/<path|.*>', _deezerProxyHandler)
-  ..get('/spotify/token', _spotifyTokenHandler);
+  ..get('/spotify/token', _spotifyTokenHandler)
+  ..post('/api/v1/lastfm/auth', _lastfmAuthHandler)
+  ..post('/api/v1/lastfm/nowplaying', _lastfmNowPlayingHandler)
+  ..post('/api/v1/lastfm/scrobble', _lastfmScrobbleHandler);
 
 Response _rootHandler(Request req) {
   return Response.ok('IT Feels Provider Backend is running!\n');
@@ -272,6 +276,150 @@ Future<Response> _spotifyTokenHandler(Request request) async {
     );
   } catch (e) {
     print('Spotify token error: $e');
+    return Response.internalServerError(
+      body: jsonEncode({'error': e.toString()}),
+    );
+  }
+}
+
+Future<Response> _lastfmAuthHandler(Request request) async {
+  try {
+    final body = await request.readAsString();
+    final data = jsonDecode(body);
+    final username = data['username'];
+    final password = data['password'];
+
+    final apiKey = Platform.environment['LASTFM_API_KEY'] ?? '';
+    final secret = Platform.environment['LASTFM_SHARED_SECRET'] ?? '';
+
+    if (apiKey.isEmpty || secret.isEmpty) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': 'Missing LastFM credentials in backend'}),
+      );
+    }
+
+    final params = {
+      'method': 'auth.getMobileSession',
+      'username': username,
+      'password': password,
+      'api_key': apiKey,
+    };
+
+    final keys = params.keys.toList()..sort();
+    String sigStr = '';
+    for (var k in keys) {
+      sigStr += '$k${params[k]}';
+    }
+    sigStr += secret;
+    final apiSig = md5.convert(utf8.encode(sigStr)).toString();
+
+    final response = await http.post(
+      Uri.parse('https://ws.audioscrobbler.com/2.0/'),
+      body: {...params, 'api_sig': apiSig, 'format': 'json'},
+    );
+
+    return Response(
+      response.statusCode,
+      body: response.body,
+      headers: {'Content-Type': 'application/json'},
+    );
+  } catch (e) {
+    return Response.internalServerError(
+      body: jsonEncode({'error': e.toString()}),
+    );
+  }
+}
+
+Future<Response> _lastfmNowPlayingHandler(Request request) async {
+  try {
+    final body = await request.readAsString();
+    final data = jsonDecode(body);
+    final sessionKey = data['sk'];
+    final track = data['track'];
+    final artist = data['artist'];
+    final album = data['album'] ?? '';
+    final duration = data['duration'] ?? '';
+
+    final apiKey = Platform.environment['LASTFM_API_KEY'] ?? '';
+    final secret = Platform.environment['LASTFM_SHARED_SECRET'] ?? '';
+
+    final params = {
+      'method': 'track.updateNowPlaying',
+      'track': track,
+      'artist': artist,
+      'api_key': apiKey,
+      'sk': sessionKey,
+    };
+    if (album.isNotEmpty) params['album'] = album;
+    if (duration.isNotEmpty) params['duration'] = duration;
+
+    final keys = params.keys.toList()..sort();
+    String sigStr = '';
+    for (var k in keys) {
+      sigStr += '$k${params[k]}';
+    }
+    sigStr += secret;
+    final apiSig = md5.convert(utf8.encode(sigStr)).toString();
+
+    final response = await http.post(
+      Uri.parse('https://ws.audioscrobbler.com/2.0/'),
+      body: {...params, 'api_sig': apiSig, 'format': 'json'},
+    );
+
+    return Response(
+      response.statusCode,
+      body: response.body,
+      headers: {'Content-Type': 'application/json'},
+    );
+  } catch (e) {
+    return Response.internalServerError(
+      body: jsonEncode({'error': e.toString()}),
+    );
+  }
+}
+
+Future<Response> _lastfmScrobbleHandler(Request request) async {
+  try {
+    final body = await request.readAsString();
+    final data = jsonDecode(body);
+    final sessionKey = data['sk'];
+    final track = data['track'];
+    final artist = data['artist'];
+    final album = data['album'] ?? '';
+    final timestamp = data['timestamp'];
+
+    final apiKey = Platform.environment['LASTFM_API_KEY'] ?? '';
+    final secret = Platform.environment['LASTFM_SHARED_SECRET'] ?? '';
+
+    final params = {
+      'method': 'track.scrobble',
+      'track[0]': track,
+      'artist[0]': artist,
+      'timestamp[0]': timestamp.toString(),
+      'api_key': apiKey,
+      'sk': sessionKey,
+    };
+    if (album.isNotEmpty) params['album[0]'] = album;
+
+    final keys = params.keys.toList()..sort();
+    String sigStr = '';
+    for (var k in keys) {
+      sigStr += '$k${params[k]}';
+    }
+    sigStr += secret;
+    final apiSig = md5.convert(utf8.encode(sigStr)).toString();
+
+    final response = await http.post(
+      Uri.parse('https://ws.audioscrobbler.com/2.0/'),
+      body: {...params, 'api_sig': apiSig, 'format': 'json'},
+    );
+
+    return Response(
+      response.statusCode,
+      body: response.body,
+      headers: {'Content-Type': 'application/json'},
+    );
+  } catch (e) {
     return Response.internalServerError(
       body: jsonEncode({'error': e.toString()}),
     );
