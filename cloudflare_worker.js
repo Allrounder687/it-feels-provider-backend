@@ -116,22 +116,26 @@ export default {
         if (!id) return new Response(JSON.stringify({ success: false, tracks: [] }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
 
         // If ID is all digits and it's not explicitly an album, it's likely a Deezer playlist
+        // HOWEVER, JioSaavn IDs can also be numeric. Try Deezer first, fallback to Saavn if empty/error.
         if (/^\d+$/.test(id) && type !== 'album') {
           const dzUrl = `https://api.deezer.com/playlist/${id}/tracks`;
-          const res = await fetch(dzUrl);
-          const data = await res.json();
-          const tracks = (data.data || []).map(e => ({
-            id: e.id.toString(),
-            title: e.title,
-            artist: e.artist ? e.artist.name : 'Unknown Artist',
-            album: e.album ? e.album.title : '',
-            duration: e.duration || 0,
-            coverArt: e.album ? (e.album.cover_xl || e.album.cover_medium) : '',
-          }));
-          return new Response(JSON.stringify({ success: true, tracks }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        } else {
-          // Else assume Saavn
-          let saavnUrl = '';
+          const dzRes = await fetch(dzUrl);
+          const dzData = await dzRes.json();
+          if (!dzData.error && dzData.data && dzData.data.length > 0) {
+            const tracks = dzData.data.map(e => ({
+              id: e.id.toString(),
+              title: e.title,
+              artist: e.artist ? e.artist.name : 'Unknown Artist',
+              album: e.album ? e.album.title : '',
+              duration: e.duration || 0,
+              coverArt: e.album ? (e.album.cover_xl || e.album.cover_medium) : '',
+            }));
+            return new Response(JSON.stringify({ success: true, tracks }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+          }
+        }
+        
+        // If not numeric, OR Deezer returned no data, assume Saavn
+        let saavnUrl = '';
           if (type === 'album') {
             saavnUrl = `https://www.jiosaavn.com/api.php?__call=content.getAlbumDetails&_format=json&cc=in&_marker=0&api_version=4&ctx=web6dot0&albumid=${id}`;
           } else {
