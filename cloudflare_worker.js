@@ -172,7 +172,6 @@ export default {
             };
           });
           return new Response(JSON.stringify({ success: true, tracks }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        }
       }
 
       // 1.f Lyrics Endpoint (Saavn)
